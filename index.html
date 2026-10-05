@@ -1,0 +1,496 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>二维码批量识别</title>
+  <style>
+    :root {
+      --primary-blue: #1677ff;
+      --primary-hover: #0958d9;
+      --bg: #f5f7fa;
+      --card-bg: #ffffff;
+      --text: #1f2329;
+      --sub-text: #8f959e;
+      --border: #dee0e3;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      padding-bottom: 30px;
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 480px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 页面视图切换 */
+    .view-section {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      width: 100%;
+    }
+    .view-section.hidden {
+      display: none !important;
+    }
+
+    /* 顶部导航 */
+    .top-header {
+      background: var(--card-bg);
+      border-radius: 999px;
+      padding: 6px 6px 6px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    .top-header .title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .btn-finish {
+      background: var(--primary-blue);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 8px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-finish:active {
+      background: var(--primary-hover);
+    }
+
+    /* 取景框容器 */
+    .camera-box {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 24px;
+      background: #000;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }
+
+    /* 原生稳定视频标签 */
+    #scanner-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* 四个蓝色边角 (原版结构复刻) */
+    .corner-overlay {
+      position: absolute;
+      inset: 22px;
+      pointer-events: none;
+    }
+    .corner-overlay span {
+      position: absolute;
+      width: 34px;
+      height: 34px;
+      border: 3.5px solid #2b85e4;
+    }
+    .corner-overlay span:nth-child(1) { top: 0; left: 0; border-right: none; border-bottom: none; border-top-left-radius: 12px; }
+    .corner-overlay span:nth-child(2) { top: 0; right: 0; border-left: none; border-bottom: none; border-top-right-radius: 12px; }
+    .corner-overlay span:nth-child(3) { bottom: 0; left: 0; border-right: none; border-top: none; border-bottom-left-radius: 12px; }
+    .corner-overlay span:nth-child(4) { bottom: 0; right: 0; border-left: none; border-top: none; border-bottom-right-radius: 12px; }
+
+    /* 扫描激光线 */
+    .laser-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #2b85e4, transparent);
+      box-shadow: 0 0 6px #2b85e4;
+      animation: laserScan 2.4s infinite ease-in-out alternate;
+    }
+    @keyframes laserScan {
+      0% { top: 0; opacity: 0.3; }
+      100% { top: 100%; opacity: 0.9; }
+    }
+
+    /* 取景框内浮动提示 */
+    .tip-tag {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #fff;
+      font-size: 13px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    /* 统计卡片 */
+    .stat-card {
+      background: var(--card-bg);
+      border-radius: 20px;
+      padding: 16px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    }
+    .stat-number {
+      font-size: 40px;
+      font-weight: 700;
+      color: var(--primary-blue);
+      line-height: 1.1;
+      transition: transform 0.15s ease;
+    }
+    .stat-number.pulse {
+      transform: scale(1.15);
+    }
+    .stat-desc {
+      font-size: 13px;
+      color: var(--sub-text);
+      margin-top: 4px;
+    }
+
+    /* 识别结果列表 / 空状态 */
+    .result-ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .empty-li {
+      background: var(--card-bg);
+      border: 1.5px dashed #d0d5dd;
+      border-radius: 18px;
+      padding: 22px 14px;
+      text-align: center;
+      color: #98a2b3;
+      font-size: 14px;
+    }
+    .item-card {
+      background: var(--card-bg);
+      border-radius: 14px;
+      padding: 12px 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .item-card .text {
+      font-size: 14px;
+      color: var(--text);
+      word-break: break-all;
+      user-select: text;
+      max-width: 80%;
+    }
+    .item-card .idx {
+      font-size: 11px;
+      color: var(--sub-text);
+      margin-top: 3px;
+    }
+
+    /* 第二页：识别结果汇总页 (原版样式复刻) */
+    .result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 4px;
+    }
+    .back-btn {
+      background: none;
+      border: none;
+      font-size: 15px;
+      color: var(--primary-blue);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .export-box {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+    .export-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .export-top span {
+      font-size: 13px;
+      color: var(--sub-text);
+    }
+    .btn-copy-all {
+      background: #eff6ff;
+      color: var(--primary-blue);
+      border: 1px solid rgba(22, 119, 255, 0.2);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .result-textarea {
+      width: 100%;
+      height: 240px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 13.5px;
+      color: var(--text);
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      user-select: text;
+    }
+    .tip-bottom {
+      font-size: 12.5px;
+      color: #98a2b3;
+      line-height: 1.5;
+      padding: 0 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- 视图 1：扫描主界面 -->
+    <section class="view-section" id="scanView">
+      <header class="top-header">
+        <div class="title">二维码批量识别</div>
+        <button class="btn-finish" onclick="showResultsView()">完成</button>
+      </header>
+
+      <div class="camera-box">
+        <!-- 原生视频流 -->
+        <video id="scanner-video" autoplay playsinline muted></video>
+        
+        <!-- 四角标记 + 激光线 -->
+        <div class="corner-overlay">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <div class="laser-line"></div>
+        </div>
+
+        <div class="tip-tag">将二维码放入取景框</div>
+      </div>
+
+      <!-- 计数 -->
+      <div class="stat-card">
+        <div class="stat-number" id="scanCount">0</div>
+        <div class="stat-desc">已识别（去重后）</div>
+      </div>
+
+      <!-- 识别明细列表 -->
+      <ul class="result-ul" id="resultUl">
+        <li class="empty-li" id="emptyLi">暂无识别结果，请将二维码对准摄像头</li>
+      </ul>
+    </section>
+
+    <!-- 视图 2：识别结果页（点击完成进入） -->
+    <section class="view-section hidden" id="resultView">
+      <div class="result-header">
+        <button class="back-btn" onclick="backToScanner()">‹ 继续识别</button>
+        <div style="font-weight: 600; font-size: 16px;">识别结果</div>
+        <div style="width: 60px;"></div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-number" id="finalCount">0</div>
+        <div class="stat-desc">共识别二维码</div>
+      </div>
+
+      <div class="export-box">
+        <div class="export-top">
+          <span>每条信息一行</span>
+          <button class="btn-copy-all" onclick="copyAllText()">一键复制</button>
+        </div>
+        <textarea class="result-textarea" id="resultTextarea" placeholder="识别到的二维码内容会汇总在这里..."></textarea>
+      </div>
+
+      <p class="tip-bottom">文本已按每行一条整理，可直接粘贴到备忘录、表格等场景</p>
+    </section>
+
+  </div>
+
+  <script>
+    const video = document.getElementById('scanner-video');
+    const scanCountEl = document.getElementById('scanCount');
+    const finalCountEl = document.getElementById('finalCount');
+    const emptyLi = document.getElementById('emptyLi');
+    const resultUl = document.getElementById('resultUl');
+    const resultTextarea = document.getElementById('resultTextarea');
+    const scanView = document.getElementById('scanView');
+    const resultView = document.getElementById('resultView');
+
+    const scannedCodes = [];
+    const scannedSet = new Set();
+    let barcodeDetector = null;
+    let isDetecting = false;
+
+    // 1. 初始化标准 BarcodeDetector (iOS Safari 17+ / Chrome 原生支持)
+    if ('BarcodeDetector' in window) {
+      barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+    }
+
+    // 2. 启动原生相机流
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 1280 }
+          }
+        });
+        video.srcObject = stream;
+        
+        // 关键：loadedmetadata 触发时启动检测，绝不使用全屏 hack
+        video.onloadedmetadata = () => {
+          video.play();
+          startLoop();
+        };
+      } catch (err) {
+        alert("请允许使用摄像头权限，或通过 HTTPS 协议访问");
+      }
+    }
+
+    // 3. 极简循环检测，确保完全不抢占 WebKit 渲染线程
+    function startLoop() {
+      if (isDetecting) return;
+      isDetecting = true;
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      const process = async () => {
+        if (scanView.classList.contains('hidden')) {
+          requestAnimationFrame(process);
+          return;
+        }
+
+        if (video.readyState >= 2) {
+          try {
+            if (barcodeDetector) {
+              const barcodes = await barcodeDetector.detect(video);
+              if (barcodes.length > 0) {
+                barcodes.forEach(b => onFound(b.rawValue));
+              }
+            }
+          } catch (e) {}
+        }
+
+        // 维持 200ms 一次的平缓轮询，既不耗电也不卡帧
+        setTimeout(() => {
+          requestAnimationFrame(process);
+        }, 180);
+      };
+
+      requestAnimationFrame(process);
+    }
+
+    // 4. 识别成功去重与提示
+    function onFound(text) {
+      if (!text || scannedSet.has(text)) return;
+
+      scannedSet.add(text);
+      scannedCodes.push(text);
+
+      // 声音反馈
+      playBeep();
+      if (navigator.vibrate) navigator.vibrate(60);
+
+      // 更新界面
+      scanCountEl.textContent = scannedSet.size;
+      scanCountEl.classList.add('pulse');
+      setTimeout(() => scanCountEl.classList.remove('pulse'), 150);
+
+      if (emptyLi) emptyLi.style.display = 'none';
+
+      // 插入列表项
+      const li = document.createElement('li');
+      li.className = 'item-card';
+      li.innerHTML = `
+        <div>
+          <div class="text">${escapeHtml(text)}</div>
+          <div class="idx">第 ${scannedCodes.length} 条</div>
+        </div>
+      `;
+      resultUl.insertBefore(li, resultUl.firstChild);
+    }
+
+    // 5. 纯本地 Web Audio API 提示音
+    function playBeep() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+      } catch (e) {}
+    }
+
+    // 6. 视图切换逻辑（与原版保持一致）
+    function showResultsView() {
+      finalCountEl.textContent = scannedCodes.length;
+      resultTextarea.value = scannedCodes.join('\n');
+      scanView.classList.add('hidden');
+      resultView.classList.remove('hidden');
+    }
+
+    function backToScanner() {
+      resultView.classList.add('hidden');
+      scanView.classList.remove('hidden');
+    }
+
+    function copyAllText() {
+      if (!resultTextarea.value) return;
+      navigator.clipboard.writeText(resultTextarea.value).then(() => {
+        alert("已复制到剪贴板");
+      });
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[m]);
+    }
+
+    window.addEventListener('DOMContentLoaded', initCamera);
+  </script>
+</body>
+</html>
